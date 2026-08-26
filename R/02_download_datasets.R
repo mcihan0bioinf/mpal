@@ -148,6 +148,9 @@ seu <- CreateSeuratObject(counts = counts, meta.data = ann, project = "caron_202
 seu <- NormalizeData(seu, verbose = FALSE)
 umap_mat <- as.matrix(ann[, c("UMAP1", "UMAP2")]); colnames(umap_mat) <- c("UMAP_1", "UMAP_2"); rownames(umap_mat) <- colnames(seu)
 seu[["umap"]] <- CreateDimReducObject(embeddings = umap_mat, key = "UMAP_", assay = DefaultAssay(seu))
+# ann$celltype (author-provided) already carried through via meta.data as
+# seu$celltype: literal cell types for healthy PBMMC samples, sample ID for
+# leukemic samples (blasts not further sub-typed in the original annotation)
 seu$group <- case_when(
   grepl("^ETV6|^HHD", seu$orig.ident) ~ "B-ALL",
   grepl("^PRE.T", seu$orig.ident) ~ "T-ALL",
