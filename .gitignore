@@ -1,0 +1,25 @@
+# private input data / signature (must never be pushed)
+Diff_genes_annotated.csv
+Info_mouse_signature.pptx
+
+# all data (raw downloads + derived intermediates, incl. the human/mouse
+# signature gene lists, which are derived from the private data above)
+data/
+
+# analysis outputs (regenerate locally by running the scripts)
+results/
+
+# R / renv
+.Rhistory
+.RData
+.Ruserdata
+renv/library/
+renv/local/
+renv/cellar/
+renv/lock/
+renv/python/
+renv/sandbox/
+renv/staging/
+
+# OS
+.DS_Store
