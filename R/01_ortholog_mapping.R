@@ -46,6 +46,7 @@ sig_sets <- list(
   up_lfc2   = deg %>% filter(log2FoldChange >= 2, padj < 0.05) %>% pull(mgi_symbol),
   up_top50  = deg %>% filter(padj < 0.05) %>% arrange(desc(log2FoldChange)) %>% slice_head(n = 50)  %>% pull(mgi_symbol),
   up_top100 = deg %>% filter(padj < 0.05) %>% arrange(desc(log2FoldChange)) %>% slice_head(n = 100) %>% pull(mgi_symbol),
+  up_top500 = deg %>% filter(padj < 0.05) %>% arrange(desc(log2FoldChange)) %>% slice_head(n = 500) %>% pull(mgi_symbol),
   down_lfc1 = deg %>% filter(log2FoldChange <= -1, padj < 0.05) %>% pull(mgi_symbol)
 )
 for (nm in names(sig_sets)) cat(sprintf("  %-10s n = %d\n", nm, length(sig_sets[[nm]])))
