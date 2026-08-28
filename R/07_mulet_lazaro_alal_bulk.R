@@ -1,4 +1,4 @@
-## 08_mulet_lazaro_alal_bulk.R
+## 07_mulet_lazaro_alal_bulk.R
 ## Score the LT-PLC upregulated human signature per patient in Mulet-Lazaro
 ## et al. 2025's 30 ALAL (acute leukemia of ambiguous lineage) cohort, then
 ## group patients by the paper's own E-CAL transcriptional-classifier

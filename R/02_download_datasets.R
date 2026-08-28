@@ -8,6 +8,8 @@
 ##   group     -- harmonized disease group (e.g. "MPAL", "AML", "B-ALL",
 ##                "T-ALL", "Healthy")
 ##   sample    -- sample / donor identifier
+## Granja additionally gets celltype_fine (see section 1), combining the
+## MPAL disease classification with a finer healthy-reference cell typing.
 ## saved to data/<atlas>_seurat.rds (not tracked in git).
 ##
 ## Atlases:
@@ -59,6 +61,31 @@ seu[["umap"]] <- CreateDimReducObject(embeddings = umap_mat, key = "UMAP_", assa
 seu$celltype <- seu$ProjectClassification
 seu$group <- ifelse(grepl("^MPAL", seu$Group), "MPAL", "Healthy")
 seu$sample <- seu$Group
+
+## seu$celltype above only labels the malignant MPAL blasts (6 categories);
+## healthy comparator cells are just "Reference" in that column. Pull the
+## author's finer BioClassification (26 normal cell states) for those cells
+## from the companion healthy-only object and merge in by Group+Barcode, so
+## every cell ends up with a label in exactly one of two complementary
+## annotation layers: celltype (MPAL disease classification) or
+## celltype_fine (MPAL classification for blasts, BioClassification for
+## healthy cells) -- see 03_atlas_celltypes_granja.R.
+healthy_file <- file.path(granja_dir, "scRNA-Healthy-Hematopoiesis-191120.rds")
+download_if_missing(
+  "https://jeffgranja.s3.amazonaws.com/MPAL-10x/Supplementary_Data/Healthy-Data/scRNA-Healthy-Hematopoiesis-191120.rds",
+  healthy_file)
+se_h <- readRDS(healthy_file)
+cd_h <- as.data.frame(colData(se_h))
+cd_h$key <- paste(cd_h$Group, cd_h$Barcode, sep = "_")
+key_m <- paste(seu$Group, seu$Barcode, sep = "_")
+bioclass <- cd_h$BioClassification[match(key_m, cd_h$key)]
+seu$celltype_fine <- ifelse(seu$celltype == "Reference" & !is.na(bioclass),
+                             sub("^[0-9]+_", "", bioclass),  # "01_HSC" -> "HSC"
+                             as.character(seu$celltype))
+cat(sprintf("Granja: merged BioClassification for %d/%d healthy reference cells\n",
+            sum(seu$celltype == "Reference" & !is.na(bioclass)), sum(seu$celltype == "Reference")))
+rm(se_h, cd_h, bioclass, key_m)
+
 saveRDS(seu, file.path(dir_data, "granja_seurat.rds"))
 cat(sprintf("Granja: %d cells x %d genes -> data/granja_seurat.rds\n", ncol(seu), nrow(seu)))
 rm(se, counts, cd, seu); gc()

@@ -1,21 +1,28 @@
-## 07_granja_patient_lineage_analysis.R
-## Two follow-up analyses on the Granja et al. 2019 MPAL atlas, using the
-## LT-PLC "up_all" UCell score already computed in 05_granja_signature_violin.R
-## (data/granja_seurat.rds$LT_PLC_up_UCell):
+## 05_granja_robustness.R
+## Three robustness/specificity follow-ups on the Granja et al. 2019 MPAL
+## atlas, using the LT-PLC "up_all" UCell score computed in
+## 04_score_signature_all_atlases.R (data/granja_seurat.rds$LT_PLC_up_UCell):
 ##
-## Analysis 2 -- per-patient reproducibility: median LT-PLC score per MPAL
+## Analysis 1 -- per-patient reproducibility: median LT-PLC score per MPAL
 ##   patient x MPAL cell-state, to check the enrichment isn't driven by one
 ##   patient's cells dominating the pool.
 ##
-## Analysis 3 -- lineage-matched comparison: for each MPAL disease-classified
+## Analysis 2 -- lineage-matched comparison: for each MPAL disease-classified
 ##   compartment, compare its LT-PLC score to the healthy reference cell
 ##   states of the *same* broad lineage, to test whether the malignant state
 ##   is elevated relative to its normal counterpart (not just "myeloid genes
 ##   score higher because myeloid cells express more genes generally").
 ##
+## Analysis 3 -- driver genes: for the two compartments that DO show
+##   elevation over their matched healthy counterpart (Erythroid_Like,
+##   Lymphoid_Like), identify which signature genes drive the difference.
+##
 ## Input:  data/granja_seurat.rds (celltype, celltype_fine, sample, LT_PLC_up_UCell)
+##         data/human_signature_sets.rds (maximal mapping; up_all set)
 ## Output: results/granja_patient_heatmap.png / .pdf
 ##         results/granja_lineage_matched_comparison.png / .pdf
+##         results/granja_lymphoid_driver_genes.csv
+##         results/granja_erythroid_driver_genes.csv
 
 suppressPackageStartupMessages({
   library(Seurat); library(ggplot2); library(dplyr); library(tidyr)
@@ -36,8 +43,8 @@ meta <- seu@meta.data %>%
          fine_class = as.character(celltype_fine),
          patient = sub("_T[0-9]+$", "", sample))  # e.g. MPAL4_T1/MPAL4_T2 -> MPAL4
 
-## ================= Analysis 2: per-patient reproducibility =================
-cat("=== Analysis 2: per-patient reproducibility ===\n")
+## ================= Analysis 1: per-patient reproducibility =================
+cat("=== Analysis 1: per-patient reproducibility ===\n")
 
 dfA2 <- meta %>%
   filter(mpal_class %in% mpal_labels, grepl("^MPAL", patient)) %>%
@@ -75,8 +82,8 @@ ggsave(file.path(dir_out, "granja_patient_heatmap.png"), pA2, width = 9, height 
 ggsave(file.path(dir_out, "granja_patient_heatmap.pdf"), pA2, width = 9, height = 6)
 cat("Saved results/granja_patient_heatmap.png / .pdf\n\n")
 
-## ================= Analysis 3: lineage-matched comparison =================
-cat("=== Analysis 3: lineage-matched MPAL vs healthy comparison ===\n")
+## ================= Analysis 2: lineage-matched comparison =================
+cat("=== Analysis 2: lineage-matched MPAL vs healthy comparison ===\n")
 
 ## define matched healthy counterparts for each MPAL compartment, by broad lineage
 lineage_map <- list(
@@ -126,3 +133,44 @@ pA3 <- ggplot(dfA3, aes(x = compartment, y = score, fill = group)) +
 ggsave(file.path(dir_out, "granja_lineage_matched_comparison.png"), pA3, width = 10, height = 6.5, dpi = 300)
 ggsave(file.path(dir_out, "granja_lineage_matched_comparison.pdf"), pA3, width = 10, height = 6.5)
 cat("\nSaved results/granja_lineage_matched_comparison.png / .pdf\n")
+
+## ================= Analysis 3: driver genes =================
+## Erythroid_Like and Lymphoid_Like are the two compartments elevated over
+## their matched healthy counterpart (Analysis 2) -- identify which genes
+## drive that difference, and whether it's a few outlier genes or broad.
+cat("\n=== Analysis 3: driver genes for Lymphoid_Like / Erythroid_Like elevation ===\n")
+
+human_sets <- readRDS(file.path(dir_data, "human_signature_sets.rds"))
+sig_genes <- intersect(human_sets$up_all, rownames(seu))
+expr <- GetAssayData(seu, layer = "data")[sig_genes, ]
+
+driver_analysis <- function(mpal_label, healthy_labels, top_n = 25) {
+  mpal_cells <- meta$cell[meta$mpal_class == mpal_label]
+  healthy_cells <- meta$cell[meta$fine_class %in% healthy_labels]
+  mean_mpal <- Matrix::rowMeans(expr[, mpal_cells, drop = FALSE])
+  mean_healthy <- Matrix::rowMeans(expr[, healthy_cells, drop = FALSE])
+  delta <- mean_mpal - mean_healthy
+  list(
+    top = data.frame(gene = names(delta), mean_mpal = mean_mpal, mean_healthy = mean_healthy, delta = delta) %>%
+      arrange(desc(delta)) %>% slice_head(n = top_n) %>% mutate(compartment = mpal_label),
+    all_delta = delta
+  )
+}
+
+report_driver <- function(mpal_label, healthy_labels) {
+  res <- driver_analysis(mpal_label, healthy_labels, top_n = 25)
+  cat(sprintf("\nTop genes driving %s elevation over {%s}:\n", mpal_label, paste(healthy_labels, collapse = ",")))
+  print(res$top %>% select(gene, mean_mpal, mean_healthy, delta), row.names = FALSE)
+  pos <- res$all_delta[res$all_delta > 0]
+  top10sum <- sum(sort(pos, decreasing = TRUE)[1:10])
+  cat(sprintf("%s: top10 genes account for %.1f%% of total positive delta (n=%d genes with positive delta)\n",
+              mpal_label, 100 * top10sum / sum(pos), length(pos)))
+  res$top
+}
+
+d_lymph <- report_driver("Lymphoid_Like", lineage_map[["Lymphoid_Like"]])
+d_eryth <- report_driver("Erythroid_Like", lineage_map[["Erythroid_Like"]])
+
+write.csv(d_lymph, file.path(dir_out, "granja_lymphoid_driver_genes.csv"), row.names = FALSE)
+write.csv(d_eryth, file.path(dir_out, "granja_erythroid_driver_genes.csv"), row.names = FALSE)
+cat("\nSaved results/granja_lymphoid_driver_genes.csv, granja_erythroid_driver_genes.csv\n")

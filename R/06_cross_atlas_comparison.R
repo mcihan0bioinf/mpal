@@ -1,14 +1,15 @@
-## 10_cross_atlas_comparison.R
+## 06_cross_atlas_comparison.R
 ## Question C: across leukemia entities, where is the LT-PLC program
-## strongest -- AML, B-ALL, T-ALL, or MPAL?
+## strongest -- AML, B-ALL, T-ALL, or MPAL? This is the direct, headline
+## answer to the reviewer's request (add MPAL, split ALL into B-ALL/T-ALL).
 ##
-## Pools per-cell LT-PLC UCell scores (up_all signature) across the four
-## single-cell atlases, using each atlas's own healthy reference as the
-## local baseline:
-##   Granja 2019       -> MPAL, Healthy (PBMC/BMMC/CD34 reference)
-##   Caron 2020         -> B-ALL, T-ALL, Healthy (PBMMC)
-##   van Galen 2019      -> AML, Healthy (BM), CellLine
-##   BoneMarrowMap       -> Healthy (independent large healthy reference)
+## Pools per-cell LT-PLC UCell scores (up_all signature, already computed
+## by 04_score_signature_all_atlases.R) across the four single-cell atlases,
+## using each atlas's own healthy reference as the local baseline:
+##   Granja 2019    -> MPAL, Healthy (PBMC/BMMC/CD34 reference)
+##   Caron 2020     -> B-ALL, T-ALL, Healthy (PBMMC)
+##   van Galen 2019 -> AML, Healthy (BM), CellLine
+##   BoneMarrowMap  -> Healthy (independent large healthy reference)
 ##
 ## Both a per-cell view (all cells pooled) and a per-patient/sample view
 ## (median score per sample -- the correct unit for statistics) are shown,
@@ -16,12 +17,14 @@
 ##
 ## Input:  data/granja_seurat.rds, data/caron_seurat.rds,
 ##         data/vangalen_seurat.rds, data/bonemarrowmap_seurat.rds
+##         (all must already carry $LT_PLC_up_UCell -- run
+##          04_score_signature_all_atlases.R first)
 ## Output: results/cross_atlas_comparison_percell.png / .pdf
 ##         results/cross_atlas_comparison_perpatient.png / .pdf
 ##         results/cross_atlas_patient_scores.csv
 
 suppressPackageStartupMessages({
-  library(Seurat); library(ggplot2); library(dplyr); library(UCell)
+  library(Seurat); library(ggplot2); library(dplyr)
 })
 
 proj_root <- getwd()
@@ -30,7 +33,8 @@ dir_out   <- file.path(proj_root, "results")
 
 extract_scores <- function(path, group_col = "group", sample_col = "sample", atlas_name) {
   seu <- readRDS(path)
-  if (!"LT_PLC_up_UCell" %in% colnames(seu@meta.data)) stop(paste(path, "not scored yet"))
+  if (!"LT_PLC_up_UCell" %in% colnames(seu@meta.data))
+    stop(paste(path, "not scored yet -- run 04_score_signature_all_atlases.R first"))
   df <- data.frame(
     atlas = atlas_name,
     score = seu$LT_PLC_up_UCell,
@@ -44,35 +48,13 @@ extract_scores <- function(path, group_col = "group", sample_col = "sample", atl
 df_granja   <- extract_scores(file.path(dir_data, "granja_seurat.rds"), atlas_name = "Granja")
 df_caron    <- extract_scores(file.path(dir_data, "caron_seurat.rds"), atlas_name = "Caron")
 df_vangalen <- extract_scores(file.path(dir_data, "vangalen_seurat.rds"), atlas_name = "van Galen")
-
-## score BoneMarrowMap now (not yet scored in prior scripts)
-bmm <- readRDS(file.path(dir_data, "bonemarrowmap_seurat.rds"))
-human_sets <- readRDS(file.path(dir_data, "human_signature_sets.rds"))
-sig <- list(LT_PLC_up = human_sets$up_all)
-DefaultAssay(bmm) <- "RNA"
-cells <- colnames(bmm)
-batch_size <- 10000
-batches <- split(cells, ceiling(seq_along(cells) / batch_size))
-scores_list <- vector("list", length(batches))
-for (i in seq_along(batches)) {
-  sub <- subset(bmm, cells = batches[[i]])
-  sc <- ScoreSignatures_UCell(GetAssayData(sub, layer = "counts"), features = sig, maxRank = 3000)
-  scores_list[[i]] <- sc
-  rm(sub); gc(verbose = FALSE)
-  cat(sprintf("BoneMarrowMap batch %d/%d scored\n", i, length(batches)))
-}
-scores <- do.call(rbind, scores_list)[cells, , drop = FALSE]
-bmm$LT_PLC_up_UCell <- scores[, "LT_PLC_up_UCell"]
-saveRDS(bmm, file.path(dir_data, "bonemarrowmap_seurat.rds"))
-df_bmm <- data.frame(atlas = "BoneMarrowMap", score = bmm$LT_PLC_up_UCell,
-                      group = "Healthy", sample = as.character(bmm$sample))
-rm(bmm); gc()
+df_bmm      <- extract_scores(file.path(dir_data, "bonemarrowmap_seurat.rds"), atlas_name = "BoneMarrowMap")
 
 df_all <- bind_rows(df_granja, df_caron, df_vangalen, df_bmm) %>%
   filter(!is.na(group))
 
-## harmonize group labels: keep atlas's own healthy separate for panel clarity,
-## but also make a merged "Healthy (pooled)" for the summary
+## harmonize group labels: keep each atlas's own healthy reference separate
+## (different platforms/pipelines -- pooling them would hide batch effects)
 df_all <- df_all %>% mutate(
   group_label = case_when(
     group == "Healthy" ~ paste0("Healthy (", atlas, ")"),
@@ -90,9 +72,6 @@ disease_order <- c("Healthy (Caron)", "Healthy (van Galen)", "Healthy (Granja)",
 df_plot <- df_all %>% filter(group_label %in% disease_order) %>%
   mutate(group_label = factor(group_label, levels = disease_order))
 
-is_disease <- c("AML" = TRUE, "B-ALL" = TRUE, "T-ALL" = TRUE, "MPAL" = TRUE, "CellLine" = FALSE,
-                "Healthy (Caron)" = FALSE, "Healthy (van Galen)" = FALSE, "Healthy (Granja)" = FALSE,
-                "Healthy (BoneMarrowMap)" = FALSE)
 pal <- c("Healthy (Caron)" = "grey75", "Healthy (van Galen)" = "grey65", "Healthy (Granja)" = "grey55",
          "Healthy (BoneMarrowMap)" = "grey45", "CellLine" = "#756bb1",
          "AML" = "#e6550d", "B-ALL" = "#3182bd", "T-ALL" = "#31a354", "MPAL" = "#c51b8a")
