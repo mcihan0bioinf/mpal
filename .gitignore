@@ -9,6 +9,9 @@ data/
 # analysis outputs (regenerate locally by running the scripts)
 results/
 
+# reviewer-response docs (embed private figures/results, local-only)
+rebuttal/
+
 # R / renv
 .Rhistory
 .RData
