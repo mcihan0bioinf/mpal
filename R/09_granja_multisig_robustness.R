@@ -20,6 +20,7 @@
 ##         data/human_signature_sets.rds (maximal mapping)
 ## Output: results/granja_patient_heatmap_multisig.png / .pdf
 ##         results/granja_score_umap_multisig.png / .pdf
+##         results/granja_score_violin_multisig.png / .pdf
 ##         data/granja_seurat.rds (updated in place: adds <variant>_UCell columns)
 
 suppressPackageStartupMessages({
@@ -164,3 +165,38 @@ p_umap <- ggplot(df_umap, aes(UMAP_1, UMAP_2, color = score_norm)) +
 ggsave(file.path(dir_out, "granja_score_umap_multisig.png"), p_umap, width = 15, height = 8, dpi = 300)
 ggsave(file.path(dir_out, "granja_score_umap_multisig.pdf"), p_umap, width = 15, height = 8)
 cat("Saved results/granja_score_umap_multisig.png / .pdf\n")
+
+## ================= Panel 3: violin by MPAL cell-state, per signature variant =================
+cat("\n=== Violin by MPAL cell-state, per signature variant ===\n")
+
+## state_order (from the heatmap panel) excludes TNK_Like -- no single patient
+## has >=20 TNK_Like cells, so it never entered the patient x cell-state pool;
+## drop it here too rather than let it fall through as a misleading "NA" bar.
+df_violin <- meta %>%
+  filter(mpal_class %in% state_order) %>%
+  select(mpal_class, all_of(paste0(variant_order, "_UCell"))) %>%
+  pivot_longer(cols = ends_with("_UCell"), names_to = "variant", values_to = "score") %>%
+  mutate(variant = sub("_UCell$", "", variant),
+         mpal_class = factor(mpal_class, levels = state_order),  # same order as the heatmap
+         variant = factor(variant, levels = variant_order, labels = variant_labels[variant_order]))
+
+pal_state <- scales::hue_pal()(length(state_order)); names(pal_state) <- state_order
+
+p_violin <- ggplot(df_violin, aes(x = mpal_class, y = score, fill = mpal_class)) +
+  geom_violin(scale = "width", trim = TRUE, alpha = 0.85) +
+  geom_boxplot(width = 0.15, outlier.shape = NA, fill = "white", alpha = 0.6) +
+  facet_wrap(~variant, ncol = 4, scales = "free_y") +
+  scale_fill_manual(values = pal_state, guide = "none") +
+  labs(title = "Granja et al. 2019: LT-PLC score by MPAL cell-state, across signature variants",
+       subtitle = "cells pooled across patients; TNK_Like excluded (no patient has >=20 cells, same as the heatmap panel); y-axis free per panel; x order = up_all median",
+       x = NULL, y = "UCell score") +
+  theme_minimal(base_size = 11) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, size = 8),
+        strip.text = element_text(face = "bold", size = 9),
+        plot.title = element_text(face = "bold", size = 13),
+        plot.subtitle = element_text(size = 9, color = "grey30"),
+        panel.grid.minor = element_blank())
+
+ggsave(file.path(dir_out, "granja_score_violin_multisig.png"), p_violin, width = 15, height = 8, dpi = 300)
+ggsave(file.path(dir_out, "granja_score_violin_multisig.pdf"), p_violin, width = 15, height = 8)
+cat("Saved results/granja_score_violin_multisig.png / .pdf\n")
